@@ -6,7 +6,6 @@ This player robbery script is made to be compatible with ox_inventory.
 ## Features
 - Player-initiated robbery
 - Hands-up animation for the victim
-- Use of Mythic Progbar for a progress bar during the robbery
 
 ## Usage
 - Press `G` to initiate a robbery when near another player with their hands up.
