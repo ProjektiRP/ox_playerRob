@@ -1,4 +1,5 @@
-ESX = nil
+local QBCore = exports['qb-core']:GetCoreObject()
+local ESX = nil
 local PlayingAnim = false
 
 -- Localization texts --
@@ -6,11 +7,9 @@ local Project = {}
 
 Citizen.CreateThread(function()
     while not ESX do
-        ESX = exports['es_extended']:getSharedObject()
+        ESX = QBCore.Functions.GetPlayerData()
         Citizen.Wait(0)
     end
-
-    ESX.PlayerData = ESX.GetPlayerData()
 end)
 
 function LoadAnimDict(dict)
@@ -25,7 +24,7 @@ function IsPlayerArmed()
 end
 
 function IsPlayersNearby()
-    local closestPlayer, distance = ESX.Game.GetClosestPlayer()
+    local closestPlayer, distance = QBCore.Functions.GetClosestPlayer()
     return closestPlayer ~= -1 and distance <= 1.5
 end
 
@@ -60,51 +59,54 @@ end
 function RobPlayer()
     if not (IsPlayerArmed() or IsArmedWithWeapon()) then
         -- Notification if the player is unarmed
-        ESX.ShowNotification(Project.locales["need"])
+        local notificationMessage = Project.locales["need"]
+        exports['okokNotify']:Alert('TSLA', notificationMessage, 5000, 'info', false)
         return
     end
 
     if IsPlayersNearby() then
-        local closestPlayer, distance = ESX.Game.GetClosestPlayer()
+        local closestPlayer, distance = QBCore.Functions.GetClosestPlayer()
 
         if distance <= 1.5 then
             local closestPlayerPed = GetPlayerPed(closestPlayer)
-            local closestPlayerHasHandsUp = IsEntityPlayingAnim(closestPlayerPed, "random@mugging3", "handsup_standing_base", 3)
+            local closestPlayerHasHandsUp = IsEntityPlayingAnim(closestPlayerPed, 'missminuteman_1ig_2', 'handsup_base', 3)
 
             if closestPlayerHasHandsUp or IsPlayerDead(closestPlayer) then
-                if lib.progressBar({
-                    duration = 8500,
-                    label = Project.locales["progressbar"],
-                    useWhileDead = false,
-                    canCancel = true,
-                    disable = { move = true, car = true, combat = true },
-                    anim = { dict = 'mini@repair', clip = 'fixing_a_ped' },
-                    prop = {}
-                }) then
-                    exports.ox_inventory:openInventory('player', GetPlayerServerId(closestPlayer))
+                if exports.ox_inventory:openInventory('player', GetPlayerServerId(closestPlayer)) then
+                    -- Animation and interaction
+                    PlayingAnim = true
+                    LoadAnimDict('mini@repair')
+                    TaskPlayAnim(PlayerPedId(), 'mini@repair', 'fixing_a_ped', 8.0, -8, -1, 49, 0, 0, 0, 0)
+                    Citizen.Wait(8500)
+                    ClearPedTasks(PlayerPedId())
+                    PlayingAnim = false
                 end
             else
                 -- Notification if the player doesn't have hands up
-                ESX.ShowNotification(Project.locales["hands"])
+                local notificationMessage = Project.locales["hands"]
+                exports['okokNotify']:Alert('TSLA', notificationMessage, 5000, 'info', false)
             end
         else
             -- Notification if no players are nearby
-            ESX.ShowNotification(Project.locales["noplayers"])
+            local notificationMessage = Project.locales["noplayers"]
+            exports['okokNotify']:Alert('TSLA', notificationMessage, 5000, 'info', false)
         end
     end
 end
 
 -- Command --
 RegisterCommand('rob', function()
-    RobPlayer()
+    if not PlayingAnim then
+        RobPlayer()
+    else
+        exports['okokNotify']:Alert('TSLA', 'You are already performing an action', 5000, 'info', false)
+    end
 end)
 
--- Register key mapping --
-RegisterKeyMapping('rob', 'Rob a player', 'keyboard', 'G')
 
 -- Localization texts --
 Project.locales = {
-    ["need"] = "You need something longer than your arm!",
+    ["need"] = "You need a gun to rob someone!",
     ["noplayers"] = "No players nearby!",
     ["progressbar"] = "Checking pockets...",
     ["hands"] = "The player doesn't have hands up!"
