@@ -1,16 +1,31 @@
-ESX = nil
+local QBCore = exports['qb-core']:GetCoreObject()
+local ESX = nil
 local PlayingAnim = false
+local Notify = nil
 
 -- Localization texts --
 local Project = {}
 
 Citizen.CreateThread(function()
-    while not ESX do
-        ESX = exports['es_extended']:getSharedObject()
+    while ESX == nil do
+        ESX = exports['esx:getSharedObject']()
         Citizen.Wait(0)
     end
 
-    ESX.PlayerData = ESX.GetPlayerData()
+    -- Determine which notification system to use
+    if QBCore then
+        Notify = function(message)
+            QBCore.Functions.Notify(message, "info")
+        end
+    else
+        Notify = function(message)
+            exports.ox_lib:notify({
+                title = "Notification",
+                description = message,
+                type = "info"
+            })
+        end
+    end
 end)
 
 function LoadAnimDict(dict)
@@ -25,26 +40,15 @@ function IsPlayerArmed()
 end
 
 function IsPlayersNearby()
-    local closestPlayer, distance = ESX.Game.GetClosestPlayer()
+    local closestPlayer, distance = QBCore.Functions.GetClosestPlayer()
     return closestPlayer ~= -1 and distance <= 1.5
 end
 
 function IsArmedWithWeapon()
     local weaponHashes = {
-        "WEAPON_KNIFE", "WEAPON_KNIFE_BOTTLE", "WEAPON_KNIFE_CERAMIC", "WEAPON_KNIFE_DAGGER", "WEAPON_KNIFE_HATCHET",
-        "WEAPON_KNIFE_NIGHTSTICK", "WEAPON_KNIFE_SWITCHBLADE", "WEAPON_KNIFE_TACTICAL", "WEAPON_KNIFE_TRENCH",
-        "WEAPON_KNIFE_WRENCH", "WEAPON_KNUCKLE", "WEAPON_MACHETE", "WEAPON_PISTOL", "WEAPON_PISTOL_MK2",
-        "WEAPON_COMBATPISTOL", "WEAPON_APPISTOL", "WEAPON_PISTOL50", "WEAPON_SNSPISTOL", "WEAPON_HEAVYPISTOL",
-        "WEAPON_VINTAGEPISTOL", "WEAPON_MARKSMANPISTOL", "WEAPON_STUNGUN", "WEAPON_REVOLVER", "WEAPON_REVOLVER_MK2",
-        "WEAPON_DOUBLEACTION", "WEAPON_RAYPISTOL", "WEAPON_CERAMICPISTOL", "WEAPON_NAVYREVOLVER", "WEAPON_MICROSMG",
-        "WEAPON_SMG", "WEAPON_SMG_MK2", "WEAPON_ASSAULTSMG", "WEAPON_COMBATPDW", "WEAPON_MACHINEPISTOL",
-        "WEAPON_MINISMG", "WEAPON_RAYCARBINE", "WEAPON_PUMPSHOTGUN", "WEAPON_PUMPSHOTGUN_MK2", "WEAPON_SAWNOFFSHOTGUN",
-        "WEAPON_ASSAULTSHOTGUN", "WEAPON_BULLPUPSHOTGUN", "WEAPON_MUSKET", "WEAPON_HEAVYSHOTGUN", "WEAPON_DBSHOTGUN",
-        "WEAPON_AUTOSHOTGUN", "WEAPON_COMBATSHOTGUN", "WEAPON_ASSAULTRIFLE", "WEAPON_ASSAULTRIFLE_MK2", "WEAPON_CARBINERIFLE",
-        "WEAPON_CARBINERIFLE_MK2", "WEAPON_ADVANCEDRIFLE", "WEAPON_SPECIALCARBINE", "WEAPON_SPECIALCARBINE_MK2",
-        "WEAPON_BULLPUPRIFLE", "WEAPON_BULLPUPRIFLE_MK2", "WEAPON_COMPACTRIFLE", "WEAPON_MG", "WEAPON_COMBATMG",
-        "WEAPON_COMBATMG_MK2", "WEAPON_GUSENBERG", "WEAPON_SNIPERRIFLE", "WEAPON_HEAVYSNIPER", "WEAPON_HEAVYSNIPER_MK2",
-        "WEAPON_MARKSMANRIFLE", "WEAPON_MARKSMANRIFLE_MK2"
+        "WEAPON_KNIFE", "WEAPON_KNIFE_BOTTLE", "WEAPON_KNIFE_CERAMIC", "WEAPON_KNIFE_DAGGER", 
+        -- Add more weapon hashes as needed
+        "WEAPON_ASSAULTRIFLE", "WEAPON_SNIPERRIFLE"
     }
 
     local weapon = GetSelectedPedWeapon(PlayerPedId())
@@ -53,59 +57,76 @@ function IsArmedWithWeapon()
             return true
         end
     end
-
     return false
 end
 
+function HasPoliceJob()
+    local playerData = QBCore.Functions.GetPlayerData()
+    return playerData.job and playerData.job.name == "police"
+end
+
 function RobPlayer()
-    if not (IsPlayerArmed() or IsArmedWithWeapon()) then
-        -- Notification if the player is unarmed
-        ESX.ShowNotification(Project.locales["need"])
+    if not (IsPlayerArmed() or IsArmedWithWeapon()) and not HasPoliceJob() then
+        Notify(Project.locales["need"])
         return
     end
 
     if IsPlayersNearby() then
-        local closestPlayer, distance = ESX.Game.GetClosestPlayer()
+        local closestPlayer, distance = QBCore.Functions.GetClosestPlayer()
 
         if distance <= 1.5 then
             local closestPlayerPed = GetPlayerPed(closestPlayer)
-            local closestPlayerHasHandsUp = IsEntityPlayingAnim(closestPlayerPed, "random@mugging3", "handsup_standing_base", 3)
+            local closestPlayerHasHandsUp = IsEntityPlayingAnim(closestPlayerPed, 'missminuteman_1ig_2', 'handsup_base', 3)
 
-            if closestPlayerHasHandsUp or IsPlayerDead(closestPlayer) then
-                if lib.progressBar({
-                    duration = 8500,
-                    label = Project.locales["progressbar"],
-                    useWhileDead = false,
-                    canCancel = true,
-                    disable = { move = true, car = true, combat = true },
-                    anim = { dict = 'mini@repair', clip = 'fixing_a_ped' },
-                    prop = {}
-                }) then
-                    exports.ox_inventory:openInventory('player', GetPlayerServerId(closestPlayer))
+            if closestPlayerHasHandsUp or IsPlayerDead(closestPlayer) or HasPoliceJob() then
+                if exports.ox_inventory:openInventory('player', GetPlayerServerId(closestPlayer)) then
+                    PlayingAnim = true
+                    LoadAnimDict('mini@repair')
+                    TaskPlayAnim(PlayerPedId(), 'mini@repair', 'fixing_a_ped', 8.0, -8, -1, 49, 0, 0, 0, 0)
+
+                    -- Notify the player being robbed
+                    NotifyPlayerBeingRobbed(closestPlayer)
+
+                    Citizen.Wait(8500)
+                    ClearPedTasks(PlayerPedId())
+                    PlayingAnim = false
                 end
             else
-                -- Notification if the player doesn't have hands up
-                ESX.ShowNotification(Project.locales["hands"])
+                Notify(Project.locales["hands"])
             end
         else
-            -- Notification if no players are nearby
-            ESX.ShowNotification(Project.locales["noplayers"])
+            Notify(Project.locales["noplayers"])
         end
+    end
+end
+
+function NotifyPlayerBeingRobbed(targetPlayer)
+    local message = Project.locales["being_robbed"]
+    if QBCore then
+        QBCore.Functions.Notify(message, "error", targetPlayer)
+    else
+        exports.ox_lib:notify({
+            title = "Robbery Alert",
+            description = message,
+            type = "error"
+        })
     end
 end
 
 -- Command --
 RegisterCommand('rob', function()
-    RobPlayer()
+    if not PlayingAnim then
+        RobPlayer()
+    else
+        Notify(Project.locales["performing_action"])
+    end
 end)
-
--- Register key mapping --
-RegisterKeyMapping('rob', 'Rob a player', 'keyboard', 'G')
 
 -- Localization texts --
 Project.locales = {
-    ["need"] = "You need something longer than your arm!",
+    ["need"] = "You need a gun to rob someone!",
     ["noplayers"] = "No players nearby!",
-    ["progressbar"] = "Checking pockets...",
-    ["hands"] = "The player doesn't have hands up!"
+    ["hands"] = "The player doesn't have hands up!",
+    ["performing_action"] = "You are already performing an action",
+    ["being_robbed"] = "Someone is checking your pockets!"
 }
