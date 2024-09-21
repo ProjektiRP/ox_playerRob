@@ -1,21 +1,23 @@
-local QBCore = exports['qb-core']:GetCoreObject()
+local QBCore = nil
 local ESX = nil
 local PlayingAnim = false
-local Notify = nil
+local Notify = function(message) end
 
 -- Localization texts --
 local Project = {}
 
 Citizen.CreateThread(function()
-    while ESX == nil do
-        ESX = exports['es_extended']:getSharedObject()
-        Citizen.Wait(0)
-    end
-
-    -- Determine which notification system to use
-    if QBCore then
+    -- Check for QBCore first
+    if exports['qb-core'] then
+        QBCore = exports['qb-core']:GetCoreObject()
         Notify = function(message)
             QBCore.Functions.Notify(message, "info")
+        end
+    -- Check for ESX if QBCore is not found
+    elseif exports['es_extended'] then
+        ESX = exports['es_extended']:getSharedObject()
+        Notify = function(message)
+            TriggerEvent('esx:showNotification', message)
         end
     else
         Notify = function(message)
@@ -40,14 +42,18 @@ function IsPlayerArmed()
 end
 
 function IsPlayersNearby()
-    local closestPlayer, distance = QBCore.Functions.GetClosestPlayer()
+    local closestPlayer, distance = -1, math.huge
+    if QBCore then
+        closestPlayer, distance = QBCore.Functions.GetClosestPlayer()
+    elseif ESX then
+        closestPlayer, distance = ESX.Game.GetClosestPlayer()
+    end
     return closestPlayer ~= -1 and distance <= 1.5
 end
 
 function IsArmedWithWeapon()
     local weaponHashes = {
         "WEAPON_KNIFE", "WEAPON_KNIFE_BOTTLE", "WEAPON_KNIFE_CERAMIC", "WEAPON_KNIFE_DAGGER", 
-        -- Add more weapon hashes as needed
         "WEAPON_ASSAULTRIFLE", "WEAPON_SNIPERRIFLE"
     }
 
@@ -61,7 +67,7 @@ function IsArmedWithWeapon()
 end
 
 function HasPoliceJob()
-    local playerData = QBCore.Functions.GetPlayerData()
+    local playerData = QBCore and QBCore.Functions.GetPlayerData() or ESX.GetPlayerData()
     return playerData.job and playerData.job.name == "police"
 end
 
@@ -72,7 +78,7 @@ function RobPlayer()
     end
 
     if IsPlayersNearby() then
-        local closestPlayer, distance = QBCore.Functions.GetClosestPlayer()
+        local closestPlayer, distance = QBCore and QBCore.Functions.GetClosestPlayer() or ESX.Game.GetClosestPlayer()
 
         if distance <= 1.5 then
             local closestPlayerPed = GetPlayerPed(closestPlayer)
@@ -102,15 +108,7 @@ end
 
 function NotifyPlayerBeingRobbed(targetPlayer)
     local message = Project.locales["being_robbed"]
-    if QBCore then
-        QBCore.Functions.Notify(message, "error", targetPlayer)
-    else
-        exports.ox_lib:notify({
-            title = "Robbery Alert",
-            description = message,
-            type = "error"
-        })
-    end
+    Notify(message)
 end
 
 -- Command --
