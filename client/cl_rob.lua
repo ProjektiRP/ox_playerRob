@@ -8,7 +8,7 @@ local Project = {}
 
 Citizen.CreateThread(function()
     while ESX == nil do
-        ESX = exports['esx:getSharedObject']()
+        ESX = exports['es_extended']:getSharedObject()
         Citizen.Wait(0)
     end
 
